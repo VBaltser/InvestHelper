@@ -18,7 +18,7 @@ export function writeLocalStorage(key: string, value: unknown): void {
   }
 }
 
-export function mergeStoredRecord<T extends Record<string, unknown>>(
+export function mergeStoredRecord<T extends object>(
   defaults: T,
   stored: unknown,
 ): T {
