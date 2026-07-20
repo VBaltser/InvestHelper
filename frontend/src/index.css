@@ -71,7 +71,7 @@ select {
 
 .nav {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
 .nav-link {
