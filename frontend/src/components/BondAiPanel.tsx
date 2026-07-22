@@ -106,6 +106,8 @@ export function BondAiPanel({ bond, onClose }: Props) {
     return () => {
       cancelled = true;
     };
+    // Reload initial summary only when the instrument changes, not on every bond field update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: bond.figi + current provider
   }, [bond.figi]);
 
   useEffect(() => {
