@@ -14,8 +14,9 @@ pipeline {
             set -e
             python3 -m venv .venv
             . .venv/bin/activate
-            pip install -r requirements.txt
+            pip install -r requirements.txt -r requirements-dev.txt
             python -m compileall -q app
+            ruff check app
           '''
         }
       }
@@ -27,6 +28,7 @@ pipeline {
           sh '''
             set -e
             npm ci
+            npm run lint
             npm run build
           '''
         }
