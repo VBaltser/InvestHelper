@@ -1,7 +1,6 @@
 import asyncio
 import socket
 from datetime import datetime, timezone
-from typing import Optional
 from urllib.parse import urlparse
 
 import httpx
