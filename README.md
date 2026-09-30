@@ -78,6 +78,37 @@ npm run dev
 
 > Первый запуск скринера занимает ~20–30 сек (загрузка цен и купонов). Данные кэшируются на 30 минут.
 
+## Запуск в Docker
+
+Для контейнерного запуска нужны Docker и Docker Compose.
+
+```bash
+cp .env.example .env
+# Укажите TINKOFF_TOKEN в .env
+docker compose up --build -d
+```
+
+Приложение будет доступно по адресу http://localhost:8080. Значение порта можно
+изменить через `APP_PORT` в корневом `.env`.
+
+Проверка состояния и просмотр журналов:
+
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+Остановка приложения:
+
+```bash
+docker compose down
+```
+
+Compose запускает два сервиса: FastAPI backend и Nginx с собранным React
+frontend. Nginx проксирует запросы `/api` во внутренний backend, поэтому наружу
+публикуется только один HTTP-порт. Секреты читаются из `.env` при запуске и не
+добавляются в Docker-образы.
+
 ## Переменные окружения
 
 | Переменная | Описание |
