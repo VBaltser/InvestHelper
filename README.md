@@ -109,6 +109,46 @@ frontend. Nginx проксирует запросы `/api` во внутренн
 публикуется только один HTTP-порт. Секреты читаются из `.env` при запуске и не
 добавляются в Docker-образы.
 
+## Виртуальные машины в VirtualBox
+
+Для локального дипломного стенда `Vagrantfile` создаёт две Ubuntu 22.04 VM:
+
+| VM | IP | CPU | RAM | Назначение |
+|---|---|---:|---:|---|
+| `jenkins` | `192.168.56.10` | 2 | 4 ГБ | Jenkins и сборка приложения |
+| `app` | `192.168.56.20` | 2 | 4 ГБ | Docker Compose и InvestHelper |
+
+Перед запуском установите VirtualBox и Vagrant, затем выполните из корня
+репозитория:
+
+```powershell
+vagrant up
+```
+
+Проверка состояния и подключение к машинам:
+
+```powershell
+vagrant status
+vagrant ssh jenkins
+vagrant ssh app
+```
+
+Управлять машинами можно отдельно:
+
+```powershell
+vagrant halt app
+vagrant reload jenkins
+vagrant provision app
+```
+
+Остановить весь стенд можно командой `vagrant halt`. Команда
+`vagrant destroy` безвозвратно удаляет обе VM и их локальные диски.
+
+Vagrant создаёт машины и сеть, а установка Jenkins, Docker и остальных
+компонентов выполняется отдельными Ansible playbook. На обеих VM заранее
+устанавливаются Python, `python3-apt`, `curl` и корневые сертификаты, необходимые
+для последующей настройки через Ansible.
+
 ## Переменные окружения
 
 | Переменная | Описание |

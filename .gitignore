@@ -16,6 +16,9 @@ backend/.cache/
 .vscode/
 *.swp
 
+# Vagrant
+.vagrant/
+
 # OS
 .DS_Store
 Thumbs.db
