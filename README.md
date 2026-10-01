@@ -111,10 +111,11 @@ frontend. Nginx проксирует запросы `/api` во внутренн
 
 ## Виртуальные машины в VirtualBox
 
-Для локального дипломного стенда `Vagrantfile` создаёт две Ubuntu 22.04 VM:
+Для локального дипломного стенда `Vagrantfile` создаёт три Ubuntu 22.04 VM:
 
 | VM | IP | CPU | RAM | Назначение |
 |---|---|---:|---:|---|
+| `control` | `192.168.56.5` | 2 | 2 ГБ | Управляющий узел Ansible |
 | `jenkins` | `192.168.56.10` | 2 | 4 ГБ | Jenkins и сборка приложения |
 | `app` | `192.168.56.20` | 2 | 4 ГБ | Docker Compose и InvestHelper |
 
@@ -129,8 +130,26 @@ vagrant up
 
 ```powershell
 vagrant status
+vagrant ssh control
 vagrant ssh jenkins
 vagrant ssh app
+```
+
+`control` получает отдельный SSH-ключ, а его публичная часть автоматически
+добавляется пользователю `vagrant` на двух управляемых машинах. Проверить связь
+после создания или повторного provisioning всех VM можно так:
+
+```powershell
+vagrant ssh control -c "cd /home/vagrant/ansible && ansible managed -m ping"
+```
+
+Если `jenkins` и `app` были созданы старой версией `Vagrantfile`, примените к
+ним новые provisioner после создания `control`:
+
+```powershell
+vagrant up control
+vagrant provision jenkins
+vagrant provision app
 ```
 
 Управлять машинами можно отдельно:
@@ -142,12 +161,12 @@ vagrant provision app
 ```
 
 Остановить весь стенд можно командой `vagrant halt`. Команда
-`vagrant destroy` безвозвратно удаляет обе VM и их локальные диски.
+`vagrant destroy` безвозвратно удаляет все три VM и их локальные диски.
 
-Vagrant создаёт машины и сеть, а установка Jenkins, Docker и остальных
-компонентов выполняется отдельными Ansible playbook. На обеих VM заранее
-устанавливаются Python, `python3-apt`, `curl` и корневые сертификаты, необходимые
-для последующей настройки через Ansible.
+Vagrant создаёт машины и сеть, устанавливает Ansible на `control` и формирует
+inventory `/home/vagrant/ansible/inventory.ini`. Установка Jenkins, Docker и
+остальных компонентов выполняется отдельными Ansible playbook. На управляемых
+VM заранее устанавливаются Python, `python3-apt`, `curl` и корневые сертификаты.
 
 ## Переменные окружения
 
