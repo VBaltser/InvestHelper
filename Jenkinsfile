@@ -1,5 +1,10 @@
 pipeline {
-  agent none
+  agent { label 'ci' }
+
+  environment {
+    REGISTRY = '192.168.56.10:5000'
+    APP_HOST = '192.168.56.20'
+  }
 
   parameters {
     string(name: 'APP_VERSION', defaultValue: '1.0.0', description: 'Версия приложения')
@@ -10,11 +15,11 @@ pipeline {
   options {
     timestamps()
     disableConcurrentBuilds()
+    timeout(time: 30, unit: 'MINUTES')
   }
 
   stages {
     stage('Build') {
-      agent { label 'vm2' }
       steps {
         echo "Сборка ${params.APP_VERSION} на ${env.NODE_NAME}"
         dir('backend') {
@@ -36,7 +41,6 @@ pipeline {
       }
       post {
         success {
-          stash name: 'frontend-dist', includes: 'frontend/dist/**'
           archiveArtifacts artifacts: 'frontend/dist/**', allowEmptyArchive: true
         }
         failure {
@@ -46,7 +50,6 @@ pipeline {
     }
 
     stage('Test') {
-      agent { label 'vm2' }
       steps {
         script {
           def backendRc = sh(
@@ -78,7 +81,6 @@ pipeline {
     }
 
     stage('Deploy') {
-      agent { label 'vm3' }
       when {
         allOf {
           branch 'main'
@@ -86,15 +88,23 @@ pipeline {
         }
       }
       steps {
-        unstash 'frontend-dist'
         sh '''
           set -e
-          DEST="$HOME/investhelper/${DEPLOY_ENV}/${APP_VERSION}"
-          mkdir -p "$DEST"
-          cp -a frontend/dist/. "$DEST/"
-          echo "${APP_VERSION}" > "$DEST/VERSION"
-          ln -sfn "$DEST" "$HOME/investhelper/${DEPLOY_ENV}/current"
-          echo "Deployed ${APP_VERSION} (${DEPLOY_ENV}) to ${DEST} on $(hostname)"
+          # Validate before using the version in Docker tags and a remote command.
+          case "$APP_VERSION" in ''|*[!A-Za-z0-9_.-]*|[.-]*) echo 'Invalid APP_VERSION' >&2; exit 1 ;; esac
+          [ "${#APP_VERSION}" -le 80 ]
+          case "$DEPLOY_ENV" in staging|prod) ;; *) exit 1 ;; esac
+          IMAGE_TAG="${APP_VERSION}-${BUILD_NUMBER}-$(git rev-parse --short=12 HEAD)"
+          docker build -t "$REGISTRY/investhelper-backend:$IMAGE_TAG" backend
+          docker build -t "$REGISTRY/investhelper-frontend:$IMAGE_TAG" frontend
+          docker push "$REGISTRY/investhelper-backend:$IMAGE_TAG"
+          docker push "$REGISTRY/investhelper-frontend:$IMAGE_TAG"
+          ssh -i "$HOME/.ssh/investhelper_deploy_ed25519" \\
+            -o BatchMode=yes -o IdentitiesOnly=yes \\
+            -o StrictHostKeyChecking=yes -o ConnectTimeout=10 \\
+            "vagrant@$APP_HOST" \\
+            "deploy-investhelper '$IMAGE_TAG' '$DEPLOY_ENV'"
+          echo "Deployed $IMAGE_TAG ($DEPLOY_ENV) to $APP_HOST"
         '''
       }
     }

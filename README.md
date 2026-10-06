@@ -168,7 +168,21 @@ inventory `/home/vagrant/ansible/inventory.ini`. Установка Jenkins, Doc
 остальных компонентов выполняется отдельными Ansible playbook. На управляемых
 VM заранее устанавливаются Python, `python3-apt`, `curl` и корневые сертификаты.
 
-## Переменные окружения
+## Деплой через Jenkins
+
+Инфраструктура стенда находится в отдельном репозитории
+`InvestHelper.Infrastructure`. Jenkinsfile выполняет Build и Test на `ci`,
+затем для ветки `main` при `RUN_DEPLOY=true` собирает и публикует Docker-образы
+в registry `192.168.56.10:5000`. По SSH он запускает Docker Compose на VM
+`app` (`192.168.56.20`), используя ключ и deploy helper, установленные Ansible.
+
+Параметры запуска: `APP_VERSION` — префикс тега образов,
+`DEPLOY_ENV=prod` — порт 8080, `DEPLOY_ENV=staging` — порт 8082.
+Номер сборки и Git SHA добавляются к тегу автоматически. Pipeline сообщает
+об успехе деплоя после проверки готовности контейнеров и HTTP health endpoints.
+Секреты backend берутся из `/opt/investhelper/.env` на `app`.
+
+## Переменные приложения
 
 | Переменная | Описание |
 |---|---|
