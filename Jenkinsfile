@@ -1,124 +1,121 @@
 pipeline {
   agent { label 'ci' }
-
   environment {
     REGISTRY = '192.168.56.10:5000'
     APP_HOST = '192.168.56.20'
+    BUILDKIT_PROGRESS = 'plain'
+    COMPOSE_ANSI = 'never'
   }
-
   parameters {
-    string(name: 'APP_VERSION', defaultValue: '1.0.0', description: 'Версия приложения')
-    choice(name: 'DEPLOY_ENV', choices: ['staging', 'prod'], description: 'Окружение для деплоя')
-    booleanParam(name: 'RUN_DEPLOY', defaultValue: false, description: 'Выполнить деплой')
+    string(name: 'APP_VERSION', defaultValue: '1.0.0', description: 'Префикс уникального тега образов')
+    choice(name: 'DEPLOY_ENV', choices: ['prod', 'staging'], description: 'Автоматический деплой main/master: prod:8080, staging:8082')
   }
-
   options {
     timestamps()
     disableConcurrentBuilds()
     timeout(time: 30, unit: 'MINUTES')
+    buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '20'))
   }
-
+  triggers { pollSCM('H/2 * * * *') }
   stages {
-    stage('Build') {
+    stage('Prepare') {
       steps {
-        echo "Сборка ${params.APP_VERSION} на ${env.NODE_NAME}"
-        dir('backend') {
+        script {
           sh '''
-            set -e
-            python3 -m venv .venv
-            . .venv/bin/activate
-            pip install -r requirements.txt -r requirements-dev.txt
-            python -m compileall -q app
-          '''
-        }
-        dir('frontend') {
-          sh '''
-            set -e
+            set -eu
+            mkdir -p artifacts
+            rm -f artifacts/smoke.xml artifacts/frontend.tar.gz artifacts/images.json artifacts/image-tag artifacts/container-logs.txt
+            case "$APP_VERSION" in ''|*[!A-Za-z0-9_.-]*|[.-]*) echo 'Invalid APP_VERSION' >&2; exit 1 ;; esac
+            [ "${#APP_VERSION}" -le 80 ]
+            case "$DEPLOY_ENV" in prod|staging) ;; *) exit 1 ;; esac
+            python3 -m venv backend/.venv
+            backend/.venv/bin/python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+            cd frontend
             npm ci
-            npm run build
           '''
-        }
-      }
-      post {
-        success {
-          archiveArtifacts artifacts: 'frontend/dist/**', allowEmptyArchive: true
-        }
-        failure {
-          echo 'Build завершился с ошибкой'
+          env.IMAGE_TAG = sh(returnStdout: true, script: '''
+            printf '%s-%s-%s-%s' "$APP_VERSION" "$BUILD_NUMBER" \
+              "$(git rev-parse --short=12 HEAD)" \
+              "$(printf '%s' "$BRANCH_NAME" | sha256sum | cut -c1-12)"
+          ''').trim()
+          env.CI_PROJECT = "ci-${env.IMAGE_TAG}".toLowerCase().replaceAll('[^a-z0-9_-]', '-')
+          writeFile file: 'artifacts/image-tag', text: "${env.IMAGE_TAG}\n"
         }
       }
     }
-
-    stage('Test') {
+    stage('Lint') {
       steps {
-        script {
-          def backendRc = sh(
-            script: '''
-              cd backend
-              . .venv/bin/activate
-              ruff check app
-            ''',
-            returnStatus: true
-          )
-          def frontendRc = sh(
-            script: '''
-              cd frontend
-              npm run lint
-            ''',
-            returnStatus: true
-          )
-          echo "Коды возврата: backend=${backendRc}, frontend=${frontendRc}"
-          if (backendRc != 0 || frontendRc != 0) {
-            error("Тесты завершились с ошибкой: backend=${backendRc}, frontend=${frontendRc}")
+        sh '''
+          set -eu
+          backend/.venv/bin/ruff check backend/app ci
+          cd frontend
+          npm run lint
+        '''
+      }
+    }
+    stage('Build') {
+      steps {
+        sh '''
+          set -eu
+          backend/.venv/bin/python -m compileall -q backend/app
+          cd frontend
+          npm run build
+          cd ..
+          tar -czf artifacts/frontend.tar.gz -C frontend/dist .
+          docker build -t "$REGISTRY/investhelper-backend:$IMAGE_TAG" backend
+          docker build -f ci/frontend.Dockerfile -t "$REGISTRY/investhelper-frontend:$IMAGE_TAG" .
+        '''
+      }
+    }
+    stage('Test built application') {
+      steps { sh 'bash ci/run-smoke.sh' }
+      post {
+        always {
+          script {
+            if (fileExists('artifacts/smoke.xml')) {
+              junit testResults: 'artifacts/smoke.xml', allowEmptyResults: false
+            }
           }
         }
       }
-      post {
-        failure {
-          echo 'Test упал, Deploy запущен не будет'
-        }
-      }
     }
-
-    stage('Deploy') {
-      when {
-        allOf {
-          branch 'main'
-          expression { return params.RUN_DEPLOY }
-        }
-      }
+    stage('Publish artifacts') {
       steps {
         sh '''
-          set -e
-          # Validate before using the version in Docker tags and a remote command.
-          case "$APP_VERSION" in ''|*[!A-Za-z0-9_.-]*|[.-]*) echo 'Invalid APP_VERSION' >&2; exit 1 ;; esac
-          [ "${#APP_VERSION}" -le 80 ]
-          case "$DEPLOY_ENV" in staging|prod) ;; *) exit 1 ;; esac
-          IMAGE_TAG="${APP_VERSION}-${BUILD_NUMBER}-$(git rev-parse --short=12 HEAD)"
-          docker build -t "$REGISTRY/investhelper-backend:$IMAGE_TAG" backend
-          docker build -t "$REGISTRY/investhelper-frontend:$IMAGE_TAG" frontend
+          set -eu
           docker push "$REGISTRY/investhelper-backend:$IMAGE_TAG"
           docker push "$REGISTRY/investhelper-frontend:$IMAGE_TAG"
+          docker image inspect "$REGISTRY/investhelper-backend:$IMAGE_TAG" \
+            "$REGISTRY/investhelper-frontend:$IMAGE_TAG" > artifacts/images.json
+        '''
+        archiveArtifacts artifacts: 'artifacts/*', fingerprint: true, allowEmptyArchive: false
+      }
+    }
+    stage('Deploy') {
+      when { anyOf { branch 'main'; branch 'master' } }
+      steps {
+        sh '''
+          set -eu
           ssh -i "$HOME/.ssh/investhelper_deploy_ed25519" \\
             -o BatchMode=yes -o IdentitiesOnly=yes \\
             -o StrictHostKeyChecking=yes -o ConnectTimeout=10 \\
             "vagrant@$APP_HOST" \\
             "deploy-investhelper '$IMAGE_TAG' '$DEPLOY_ENV'"
-          echo "Deployed $IMAGE_TAG ($DEPLOY_ENV) to $APP_HOST"
         '''
       }
     }
   }
-
   post {
-    success {
-      echo "Pipeline ${params.APP_VERSION} успешно завершён"
-    }
-    failure {
-      echo 'Pipeline завершился с ошибкой'
-    }
     always {
-      echo "Итог сборки: ${currentBuild.currentResult}"
+      script {
+        if (fileExists('artifacts/smoke.xml')) {
+          archiveArtifacts artifacts: 'artifacts/smoke.xml', allowEmptyArchive: false
+        }
+        if (fileExists('artifacts/container-logs.txt')) {
+          archiveArtifacts artifacts: 'artifacts/container-logs.txt', allowEmptyArchive: false
+        }
+      }
+      echo "Итог сборки: ${currentBuild.currentResult}. Внешние уведомления пока не настроены."
     }
   }
 }

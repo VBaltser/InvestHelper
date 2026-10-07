@@ -11,6 +11,9 @@ dist/
 *.local
 backend/.cache/
 
+# CI reports and build archives
+/artifacts/
+
 # IDE
 .idea/
 .vscode/

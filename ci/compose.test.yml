@@ -1,0 +1,23 @@
+services:
+  backend:
+    image: "${REGISTRY}/investhelper-backend:${IMAGE_TAG}"
+    environment:
+      TINKOFF_TOKEN: ci-placeholder
+      TINKOFF_MODE: sandbox
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  frontend:
+    image: "${REGISTRY}/investhelper-frontend:${IMAGE_TAG}"
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1::80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
