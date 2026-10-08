@@ -146,7 +146,7 @@ export function PortfolioPage() {
       {!loading && error && (
         <ErrorState
           error={error}
-          hint="Backend запущен, но T-Invest API недоступен из вашей сети. Попробуйте VPN или мобильный интернет."
+          hint="Backend запущен. Причину ошибки соединения с T-Invest API смотрите в диагностике ниже."
         />
       )}
 
