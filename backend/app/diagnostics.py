@@ -71,6 +71,13 @@ async def run_network_diagnostics() -> dict:
     api = await _check_api_request()
 
     suggestions: list[str] = []
+    tls_error = "CERTIFICATE_VERIFY_FAILED" in api["message"]
+    if tls_error:
+        suggestions.append(
+            "Проверка TLS-сертификата не пройдена. Настройте доверенный набор "
+            "CA через TINKOFF_SSL_CA_FILE; для сертификатов Минцифры добавьте "
+            "Russian Trusted Root CA и Russian Trusted Sub CA."
+        )
     if not tcp["ok"]:
         suggestions.extend(
             [
@@ -81,7 +88,7 @@ async def run_network_diagnostics() -> dict:
         )
     if settings.tinkoff_https_proxy:
         suggestions.append(f"Используется прокси: {settings.tinkoff_https_proxy}")
-    else:
+    elif not tls_error:
         suggestions.append(
             "Если нужен прокси, укажите TINKOFF_HTTPS_PROXY в backend/.env"
         )

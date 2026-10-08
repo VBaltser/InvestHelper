@@ -65,11 +65,18 @@ def _parse_decimal(value: Any) -> Decimal:
 
 def _connection_error_message(exc: Exception) -> str:
     details = str(exc).strip() or type(exc).__name__
+    if "CERTIFICATE_VERIFY_FAILED" in details:
+        return (
+            "Не удалось проверить TLS-сертификат T-Invest API. "
+            "Настройте доверенные сертификаты через TINKOFF_SSL_CA_FILE. "
+            "Диагностика: /api/diagnostics. "
+            f"Технически: {details}"
+        )
     return (
         "Не удалось подключиться к T-Invest API (invest-public-api.tbank.ru). "
         "Скорее всего сеть блокирует порт 443 до API. "
         "Попробуйте VPN или мобильный интернет. "
-        f"Диагностика: http://127.0.0.1:8000/api/diagnostics. "
+        "Диагностика: /api/diagnostics. "
         f"Технически: {details}"
     )
 
