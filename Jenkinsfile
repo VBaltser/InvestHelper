@@ -21,6 +21,9 @@ pipeline {
     stage('Prepare') {
       steps {
         script {
+          // New multibranch jobs may start before parameters reach the shell environment.
+          env.APP_VERSION = params.APP_VERSION == null ? '1.0.0' : params.APP_VERSION.toString()
+          env.DEPLOY_ENV = params.DEPLOY_ENV == null ? 'prod' : params.DEPLOY_ENV.toString()
           sh '''
             set -eu
             mkdir -p artifacts
@@ -115,7 +118,31 @@ pipeline {
           archiveArtifacts artifacts: 'artifacts/container-logs.txt', allowEmptyArchive: false
         }
       }
-      echo "Итог сборки: ${currentBuild.currentResult}. Внешние уведомления пока не настроены."
+      echo "Итог сборки: ${currentBuild.currentResult}"
+    }
+    cleanup {
+      script {
+        try {
+          withCredentials([
+            string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_BOT_TOKEN'),
+            string(credentialsId: 'telegram-chat-id', variable: 'TELEGRAM_CHAT_ID')
+          ]) {
+            withEnv(["BUILD_RESULT=${currentBuild.currentResult}"]) {
+              def notificationStatus = sh(returnStatus: true, script: '''
+                set +x
+                python3 ci/notify_telegram.py
+              ''')
+              if (notificationStatus != 0) {
+                echo 'Telegram: уведомление не доставлено; проверьте credentials и доступ к api.telegram.org.'
+              }
+            }
+          }
+        } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException interrupted) {
+          throw interrupted
+        } catch (Exception notificationError) {
+          echo 'Telegram: отправка недоступна; проверьте Secret text credentials telegram-bot-token и telegram-chat-id.'
+        }
+      }
     }
   }
 }
