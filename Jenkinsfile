@@ -5,6 +5,7 @@ pipeline {
     APP_HOST = '192.168.56.20'
     BUILDKIT_PROGRESS = 'plain'
     COMPOSE_ANSI = 'never'
+    DEPLOY_RESULT = 'NOT_STARTED'
   }
   parameters {
     string(name: 'APP_VERSION', defaultValue: '1.0.0', description: 'Префикс уникального тега образов')
@@ -97,6 +98,10 @@ pipeline {
     stage('Deploy') {
       when { anyOf { branch 'main'; branch 'master' } }
       steps {
+        script {
+          env.DEPLOY_RESULT = 'IN_PROGRESS'
+          env.DEPLOY_TARGET_URL = "http://${env.APP_HOST}:${env.DEPLOY_ENV == 'staging' ? '8082' : '8080'}/"
+        }
         sh '''
           set -eu
           ssh -i "$HOME/.ssh/investhelper_deploy_ed25519" \\
@@ -105,6 +110,11 @@ pipeline {
             "vagrant@$APP_HOST" \\
             "deploy-investhelper '$IMAGE_TAG' '$DEPLOY_ENV'"
         '''
+        script { env.DEPLOY_RESULT = 'SUCCESS' }
+      }
+      post {
+        failure { script { env.DEPLOY_RESULT = 'FAILURE' } }
+        aborted { script { env.DEPLOY_RESULT = 'ABORTED' } }
       }
     }
   }
@@ -122,6 +132,11 @@ pipeline {
     }
     cleanup {
       script {
+        if (env.DEPLOY_RESULT == 'NOT_STARTED') {
+          env.DEPLOY_RESULT = 'SKIPPED'
+          env.DEPLOY_SKIP_REASON = env.BRANCH_NAME in ['main', 'master'] ?
+            'Предыдущие стадии не завершились успешно' : 'Деплой только для main/master'
+        }
         try {
           withCredentials([
             string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_BOT_TOKEN'),

@@ -13,16 +13,26 @@ def main() -> int:
     if not token or not chat_id:
         print("Telegram: bot token or chat ID is missing", file=sys.stderr)
         return 1
-    text = "\n".join(
-        [
+    deploy_result = os.environ.get("DEPLOY_RESULT", "NOT_STARTED")
+    lines = [
             f"InvestHelper: {os.environ.get('BUILD_RESULT', 'UNKNOWN')}",
             f"Job: {os.environ.get('JOB_NAME', '?')}",
             f"Branch: {os.environ.get('BRANCH_NAME', '?')}",
             f"Build: #{os.environ.get('BUILD_NUMBER', '?')}",
             f"Image: {os.environ.get('IMAGE_TAG', 'not built')}",
-            os.environ.get("BUILD_URL", ""),
-        ]
-    )[:4000]
+            f"Deploy: {deploy_result}",
+    ]
+    if deploy_result == "SKIPPED":
+        lines.append(f"Reason: {os.environ.get('DEPLOY_SKIP_REASON', 'not requested')}")
+    elif deploy_result != "NOT_STARTED":
+        lines.extend(
+            [
+                f"Environment: {os.environ.get('DEPLOY_ENV', '?')}",
+                f"Target: {os.environ.get('DEPLOY_TARGET_URL', '?')}",
+            ]
+        )
+    lines.append(os.environ.get("BUILD_URL", ""))
+    text = "\n".join(lines)[:4000]
     data = json.dumps(
         {"chat_id": chat_id, "text": text, "link_preview_options": {"is_disabled": True}}
     ).encode()
