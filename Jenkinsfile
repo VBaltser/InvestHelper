@@ -5,7 +5,6 @@ pipeline {
     APP_HOST = '192.168.56.20'
     BUILDKIT_PROGRESS = 'plain'
     COMPOSE_ANSI = 'never'
-    DEPLOY_RESULT = 'NOT_STARTED'
   }
   parameters {
     string(name: 'APP_VERSION', defaultValue: '1.0.0', description: 'Префикс уникального тега образов')
@@ -17,11 +16,11 @@ pipeline {
     timeout(time: 30, unit: 'MINUTES')
     buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '20'))
   }
-  triggers { pollSCM('H/2 * * * *') }
   stages {
     stage('Prepare') {
       steps {
         script {
+          env.DEPLOY_RESULT = 'NOT_STARTED'
           // New multibranch jobs may start before parameters reach the shell environment.
           env.APP_VERSION = params.APP_VERSION == null ? '1.0.0' : params.APP_VERSION.toString()
           env.DEPLOY_ENV = params.DEPLOY_ENV == null ? 'prod' : params.DEPLOY_ENV.toString()
@@ -132,7 +131,7 @@ pipeline {
     }
     cleanup {
       script {
-        if (env.DEPLOY_RESULT == 'NOT_STARTED') {
+        if (!env.DEPLOY_RESULT || env.DEPLOY_RESULT == 'NOT_STARTED') {
           env.DEPLOY_RESULT = 'SKIPPED'
           env.DEPLOY_SKIP_REASON = env.BRANCH_NAME in ['main', 'master'] ?
             'Предыдущие стадии не завершились успешно' : 'Деплой только для main/master'
@@ -142,7 +141,13 @@ pipeline {
             string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_BOT_TOKEN'),
             string(credentialsId: 'telegram-chat-id', variable: 'TELEGRAM_CHAT_ID')
           ]) {
-            withEnv(["BUILD_RESULT=${currentBuild.currentResult}"]) {
+            withEnv([
+              "BUILD_RESULT=${currentBuild.currentResult}",
+              "DEPLOY_RESULT=${env.DEPLOY_RESULT}",
+              "DEPLOY_SKIP_REASON=${env.DEPLOY_SKIP_REASON ?: ''}",
+              "DEPLOY_ENV=${env.DEPLOY_ENV ?: ''}",
+              "DEPLOY_TARGET_URL=${env.DEPLOY_TARGET_URL ?: ''}"
+            ]) {
               def notificationStatus = sh(returnStatus: true, script: '''
                 set +x
                 python3 ci/notify_telegram.py
