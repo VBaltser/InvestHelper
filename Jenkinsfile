@@ -8,8 +8,8 @@ pipeline {
   }
   parameters {
     string(name: 'APP_VERSION', defaultValue: '1.0.0', description: 'Префикс уникального тега образов')
-    choice(name: 'DEPLOY_ENV', choices: ['prod', 'staging'], description: 'Автоматический деплой main/master: prod:8080, staging:8082')
-    booleanParam(name: 'DEPLOY_STAGING', defaultValue: false, description: 'Для остальных веток: опубликовать сборку на staging :8082. Текущая staging-версия будет заменена.')
+    booleanParam(name: 'DEPLOY', defaultValue: false, description: 'Опубликовать ветку на выбранный стенд после CI; main/master публикуются автоматически')
+    choice(name: 'DEPLOY_ENV', choices: ['prod', 'staging'], description: 'Целевой стенд: prod:8080 или staging:8082; для main/master деплой автоматический')
   }
   options {
     timestamps()
@@ -25,10 +25,6 @@ pipeline {
           // New multibranch jobs may start before parameters reach the shell environment.
           env.APP_VERSION = params.APP_VERSION == null ? '1.0.0' : params.APP_VERSION.toString()
           env.DEPLOY_ENV = params.DEPLOY_ENV == null ? 'prod' : params.DEPLOY_ENV.toString()
-          // Non-main branches can explicitly deploy to staging, never to prod.
-          if (!(env.BRANCH_NAME in ['main', 'master']) && params.DEPLOY_STAGING == true) {
-            env.DEPLOY_ENV = 'staging'
-          }
           sh '''
             set -eu
             mkdir -p artifacts
@@ -102,14 +98,11 @@ pipeline {
     stage('Deploy') {
       when {
         expression {
-          env.BRANCH_NAME in ['main', 'master'] || params.DEPLOY_STAGING == true
+          env.BRANCH_NAME in ['main', 'master'] || params.DEPLOY == true
         }
       }
       steps {
         script {
-          if (!(env.BRANCH_NAME in ['main', 'master'])) {
-            env.DEPLOY_ENV = 'staging'
-          }
           env.DEPLOY_RESULT = 'IN_PROGRESS'
           env.DEPLOY_TARGET_URL = "http://${env.APP_HOST}:${env.DEPLOY_ENV == 'staging' ? '8082' : '8080'}/"
         }
@@ -145,8 +138,8 @@ pipeline {
       script {
         if (!env.DEPLOY_RESULT || env.DEPLOY_RESULT == 'NOT_STARTED') {
           env.DEPLOY_RESULT = 'SKIPPED'
-          env.DEPLOY_SKIP_REASON = (env.BRANCH_NAME in ['main', 'master'] || params.DEPLOY_STAGING == true) ?
-            'Предыдущие стадии не завершились успешно' : 'Деплой staging не запрошен: DEPLOY_STAGING=false'
+          env.DEPLOY_SKIP_REASON = (env.BRANCH_NAME in ['main', 'master'] || params.DEPLOY == true) ?
+            'Предыдущие стадии не завершились успешно' : 'Деплой не запрошен: DEPLOY=false'
         }
         try {
           withCredentials([
