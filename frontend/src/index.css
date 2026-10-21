@@ -1,6 +1,7 @@
 :root {
   color-scheme: dark;
-  --bg: #c22626;
+  /* --bg: #c22626; */
+  --bg: #000744;
   --bg-elevated: #121820;
   --bg-card: #151c26;
   --border: #243041;
