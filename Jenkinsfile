@@ -35,7 +35,10 @@ pipeline {
             python3 -m venv backend/.venv
             backend/.venv/bin/python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
             cd frontend
-            npm ci
+            timeout --signal=TERM --kill-after=10s 5m npm ci \
+              --no-audit --no-fund --prefer-offline \
+              --fetch-retries=2 --fetch-retry-mintimeout=1000 \
+              --fetch-retry-maxtimeout=10000 --fetch-timeout=30000
           '''
           env.IMAGE_TAG = sh(returnStdout: true, script: '''
             printf '%s-%s-%s-%s' "$APP_VERSION" "$BUILD_NUMBER" \
